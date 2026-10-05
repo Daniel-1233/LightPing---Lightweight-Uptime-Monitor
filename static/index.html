@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LightPing 站点监控面板</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+            background: #f4f6f9;
+            color: #333;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(120deg, #1e3a5f, #2c5aa0);
+            color: #fff;
+            padding: 22px 28px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 22px; font-weight: 600; }
+        .header small { opacity: 0.8; margin-left: 12px; font-weight: normal; }
+
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+
+        /* 新增表单 */
+        .card-form {
+            background: #fff;
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .card-form h2 { font-size: 15px; margin-bottom: 16px; color: #1e3a5f; }
+        .form-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+        .form-group { display: flex; flex-direction: column; flex: 1; min-width: 150px; }
+        .form-group label { font-size: 13px; color: #666; margin-bottom: 6px; }
+        .form-group input {
+            padding: 9px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color .2s;
+        }
+        .form-group input:focus { outline: none; border-color: #2c5aa0; }
+        .btn {
+            padding: 9px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: opacity .2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-primary { background: #2c5aa0; color: #fff; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-success { background: #16a34a; color: #fff; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .card-head-status {
+            font-size: 12px; font-weight: 600; color: #555;
+            flex-shrink: 0; padding: 3px 10px; border-radius: 20px;
+            background: #f1f3f5;
+        }
+        .card-head-status:empty { display: none; }
+
+        /* 启用/禁用开关 */
+        .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background: #cbd5e1; border-radius: 22px; transition: .3s;
+        }
+        .switch .slider::before {
+            content: ""; position: absolute; height: 16px; width: 16px;
+            left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .3s;
+        }
+        .switch input:checked + .slider { background: #16a34a; }
+        .switch input:checked + .slider::before { transform: translateX(18px); }
+
+        /* 目标卡片：每行固定 3 个 */
+        .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+        @media (max-width: 900px) {
+            .cards { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 600px) {
+            .cards { grid-template-columns: 1fr; }
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(16,24,40,0.08), 0 4px 16px rgba(16,24,40,0.06);
+            overflow: hidden;
+            min-height: 152px;
+            display: flex;
+            flex-direction: column;
+            transition: box-shadow .2s, transform .15s;
+        }
+        .card:hover { box-shadow: 0 6px 24px rgba(16,24,40,0.14); transform: translateY(-2px); }
+        /* 禁用目标的卡片：半透明置灰 */
+        .card.disabled { opacity: 0.55; }
+        .card.disabled .card-head { cursor: default; }
+        .card-head {
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+        }
+        .status-dot {
+            width: 11px; height: 11px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 8px rgba(0,0,0,0.2);
+        }
+        .status-up { background: #16a34a; box-shadow: 0 0 8px #16a34a66; }
+        .status-down { background: #dc2626; box-shadow: 0 0 8px #dc262666; }
+        .status-unknown { background: #9ca3af; }
+        .card-title { flex: 1; min-width: 0; }
+        .card-title .name { font-size: 15px; font-weight: 600; line-height: 1.3; }
+        .card-title .url {
+            font-size: 11px; color: #8a8f99; margin-top: 2px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .card-meta { display: flex; gap: 10px; font-size: 12px; color: #555; }
+        .card-body {
+            padding: 12px 16px;
+            display: flex;
+            gap: 12px;
+            flex: 1;
+        }
+        .stat { flex: 1; text-align: center; min-width: 0; }
+        .stat .value { font-size: 17px; font-weight: 700; color: #1e3a5f; line-height: 1.2; }
+        .stat .label { font-size: 11px; color: #9aa0a8; margin-top: 3px; }
+        .card-footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-top: 1px solid #f0f0f0;
+            background: #fafbfc;
+        }
+        .card-footer .foot-text { font-size: 12px; color: #8a8f99; margin-right: auto; }
+        .card-actions { display: flex; gap: 8px; }
+
+        /* 卡片展开 - 详情 */
+        .card-detail { display: none; border-top: 1px solid #f0f0f0; padding: 14px 16px; }
+        .card.open .card-detail { display: block; }
+        .chart-box { width: 100%; height: 220px; margin: 8px 0 12px; }
+        /* 【改动点】无数据时图表容器内的占位提示：垂直居中，与有数据时同高 */
+        .empty-chart {
+            height: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 13px;
+        }
+        /* 【改动点】表格分页控件 */
+        .pager {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .pager-btn {
+            padding: 4px 14px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            background: #fff;
+            color: #333;
+            font-size: 12px;
+            cursor: pointer;
+            transition: border-color .2s, color .2s;
+        }
+        .pager-btn:hover:not(:disabled) { border-color: #2c5aa0; color: #2c5aa0; }
+        .pager-btn:disabled { color: #bfbfbf; cursor: not-allowed; background: #f5f5f5; }
+        .pager-info { font-size: 12px; color: #666; }
+        /* 【改动点】统一表格行高：数据行与空行行高完全一致（固定 40px），
+           用 box-sizing 确保 padding 计入高度，行高不随内容多少而撑开/压缩。
+           目的是无论该卡片检测记录是 0 条、3 条还是 8 条，表格总高度始终固定，
+           页面不会因展开/分页上下跳动。 */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        /* 数据行：固定高度 + box-sizing */
+        .table-wrap table td {
+            height: 40px;
+            box-sizing: border-box;
+            padding: 0 12px; /* 高度已固定，改用上下 0，避免撑开 */
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+            white-space: nowrap; /* 防止长内容换行撑高行 */
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* 表头：同样固定高度，与数据行对齐 */
+        .table-wrap table th {
+            height: 40px;
+            box-sizing: border-box;
+            padding: 0 12px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+            background: #fafbfc;
+            color: #667085;
+            font-weight: 600;
+            vertical-align: middle;
+        }
+        /* 【改动点】空行补齐：与数据行同高（40px）、同边框，保留表格线条 */
+        .empty-row td {
+            height: 40px;
+            box-sizing: border-box;
+            padding: 0 12px;
+            border-bottom: 1px solid #f0f0f0;
+            color: transparent;
+            user-select: none;
+        }
+        /* 错误信息列：宽度受限，用省略号，保证不撑高行 */
+        .err-text { color: #dc2626; max-width: 220px; }
+
+        /* toast */
+        #toast {
+            position: fixed; top: 20px; right: 20px; z-index: 9999;
+            padding: 12px 18px; border-radius: 8px; color: #fff;
+            font-size: 14px; opacity: 0; transition: opacity .3s;
+            pointer-events: none; max-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        #toast.show { opacity: 1; }
+        .toast-success { background: #16a34a; }
+        .toast-error { background: #dc2626; }
+
+        /* 加载态 */
+        .loading { text-align: center; color: #999; padding: 40px 0; }
+        .empty { text-align: center; color: #aaa; padding: 40px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>LightPing <small>站点监控面板</small></h1>
+    </div>
+
+    <div class="container">
+        <!-- 新增目标表单 -->
+        <div class="card-form">
+            <h2>➕ 新增监控目标</h2>
+            <form id="addForm" class="form-row">
+                <div class="form-group">
+                    <label>名称</label>
+                    <input type="text" id="f_name" placeholder="例如：官网首页" required>
+                </div>
+                <div class="form-group" style="flex:2">
+                    <label>URL</label>
+                    <input type="text" id="f_url" placeholder="https://example.com" required>
+                </div>
+                <div class="form-group">
+                    <label>探测间隔(秒)</label>
+                    <input type="number" id="f_interval" value="60" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>期望状态码</label>
+                    <input type="number" id="f_expected" value="200" min="100" max="599" required>
+                </div>
+                <div class="form-group">
+                    <label>超时(秒)</label>
+                    <input type="number" id="f_timeout" value="10" min="1" required>
+                </div>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </form>
+        </div>
+
+        <!-- 目标卡片列表 -->
+        <div id="cards" class="cards"></div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+        // ---------- 工具函数 ----------
+        function toast(msg, type) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.className = 'show ' + (type === 'error' ? 'toast-error' : 'toast-success');
+            clearTimeout(el._t);
+            el._t = setTimeout(() => el.className = '', 3000);
+        }
+
+        async function api(url, options = {}) {
+            const res = await fetch(url, options);
+            if (!res.ok) {
+                let detail = '请求失败';
+                try { detail = (await res.json()).detail || detail; } catch (e) {}
+                throw new Error(detail);
+            }
+            if (res.status === 204) return null;
+            return res.json();
+        }
+
+        // ---------- 加载目标列表（局部更新，避免重建 DOM 丢失展开状态）----------
+        let isLoading = false; // 加载互斥锁：防止并发刷新交错渲染出重复卡片
+        async function loadTargets() {
+            // 已有加载在进行中则跳过本次，避免删除刷新与定时刷新竞态
+            if (isLoading) return;
+            isLoading = true;
+            const box = document.getElementById('cards');
+            try {
+                const targets = await api('/api/targets');
+                if (targets.length === 0) {
+                    box.innerHTML = '<div class="empty">暂无监控目标，请先添加</div>';
+                    return;
+                }
+
+                // 记录当前页面上已经渲染的目标 id，用于最后移除已删除的卡片
+                const renderedIds = new Set();
+
+                // 【改动点】并发拉取所有目标的最近检测记录（limit=1 只取最近一条即可驱动状态灯），
+                // 替代原来的串行 N+1 请求，明显降低轮询耗时；并发数量由 Promise.all 控制
+                const entries = await Promise.all(targets.map(async t => {
+                    let checks = [];
+                    try {
+                        checks = await api('/api/targets/' + t.id + '/checks?limit=1');
+                    } catch (e) { checks = []; }
+                    return { t, checks };
+                }));
+
+                for (const { t, checks } of entries) {
+                    renderedIds.add(t.id);
+
+                    // 查找是否已存在该目标的卡片
+                    const card = box.querySelector(`[data-id="${t.id}"]`);
+                    if (card) {
+                        // 已存在：只局部更新状态信息，不重建 DOM，保留展开状态与图表
+                        updateCardDom(card, t, checks);
+                    } else {
+                        // 不存在：新建卡片
+                        box.appendChild(await createCard(t, checks));
+                    }
+                }
+
+                // 移除页面上已不存在（被删除）的目标卡片
+                box.querySelectorAll('.card').forEach(card => {
+                    if (!renderedIds.has(Number(card.dataset.id))) {
+                        // 释放卡片上挂载的 ECharts 实例，避免内存残留
+                        if (card._chart) { card._chart.dispose(); card._chart = null; }
+                        card.remove();
+                    }
+                });
+            } catch (e) {
+                box.innerHTML = '<div class="empty">加载失败：' + e.message + '</div>';
+            } finally {
+                isLoading = false; // 无论成功失败都释放锁
+            }
+        }
+
+        // ---------- 局部更新单张卡片的状态信息 ----------
+        // 已展开的卡片会额外刷新详情（图表新增检测点），保持实时性
+        function updateCardDom(card, t, checks) {
+            const last = checks[0]; // 接口按时间倒序，第一条为最近
+            const dot = card.querySelector('.status-dot');
+            const nameEl = card.querySelector('.card-title .name');
+            const urlEl = card.querySelector('.card-title .url');
+            const values = card.querySelectorAll('.card-body .value');
+            // 开关状态（禁用时置灰）
+            const toggleInput = card.querySelector('[data-toggle] input');
+            // 头部状态文字与底部开关说明文字
+            const headStatus = card.querySelector('.card-head-status');
+            const footText = card.querySelector('.card-footer .foot-text');
+
+            // 更新名称与 URL
+            if (nameEl) nameEl.textContent = t.name;
+            if (urlEl) urlEl.textContent = t.url;
+
+            // 目标被禁用：状态灯置灰、状态文本显示“已禁用”
+            if (!t.is_active) {
+                dot.className = 'status-dot status-unknown';
+                if (headStatus) headStatus.textContent = '已禁用';
+            } else if (last) {
+                // 启用状态才更新状态灯（避免覆盖“检测中”中间态）
+                dot.className = 'status-dot ' + (last.is_up ? 'status-up' : 'status-down');
+                if (headStatus) headStatus.textContent = last.is_up ? '在线' : '离线';
+            }
+            // 最近响应耗时（第 1 个 .value）
+            if (values[0]) {
+                values[0].textContent = last && last.response_time_ms != null
+                    ? last.response_time_ms + 'ms' : '--';
+            }
+            // 可用率（第 2 个 .value）：无记录显示“暂无数据”
+            if (values[1]) {
+                values[1].textContent = t.uptime_percent != null
+                    ? t.uptime_percent.toFixed(1) + '%' : '暂无数据';
+            }
+            // 探测间隔（第 3 个 .value）
+            if (values[2]) values[2].textContent = t.interval_seconds + 's';
+
+            // 同步开关、禁用样式与底部说明文字
+            if (toggleInput) toggleInput.checked = !!t.is_active;
+            if (footText) footText.textContent = t.is_active ? '监控中' : '已禁用';
+            card.classList.toggle('disabled', !t.is_active);
+
+            // 若卡片处于展开状态，同步刷新详情：折线图补上定时/手动检测产生的新点
+            // 【改动点】轮询刷新时用 limit=200 增量数据（而非全量 10000 条），
+            // 显著减少传输与图表渲染开销，避免页面卡顿；新检测点仍会出现在图表中
+            if (card.classList.contains('open')) {
+                refreshDetail(card, t, 200);
+            }
+        }
+
+        // ---------- 启用/禁用监控目标 ----------
+        async function toggleTarget(card, t, checked) {
+            const input = card.querySelector('[data-toggle] input');
+            input.disabled = true; // 请求期间禁用开关，防止重复点击触发多次请求
+            try {
+                const updated = await api('/api/targets/' + t.id + '/toggle', { method: 'PUT' });
+                t.is_active = updated.is_active;
+                toast(updated.is_active ? '已启用监控' : '已禁用监控', 'success');
+                // 【改动点】切换成功后只更新当前卡片状态，不再调用 loadTargets 全量重拉，
+                // 减少不必要的接口轮询；调度器任务由后端 toggle 接口同步
+                card.classList.toggle('disabled', !updated.is_active);
+                const dot = card.querySelector('.status-dot');
+                const headStatus = card.querySelector('.card-head-status');
+                const footText = card.querySelector('.card-footer .foot-text');
+                if (updated.is_active) {
+                    // 启用后重新拉取最近一次检测，恢复状态灯与耗时显示
+                    let checks = [];
+                    try { checks = await api('/api/targets/' + t.id + '/checks?limit=1'); } catch (e) {}
+                    updateCardDom(card, t, checks);
+                } else {
+                    // 禁用：状态灯置灰、文字显示“已禁用”
+                    dot.className = 'status-dot status-unknown';
+                    if (headStatus) headStatus.textContent = '已禁用';
+                    if (footText) footText.textContent = '已禁用';
+                }
+            } catch (err) {
+                // 请求失败则回滚开关状态
+                if (input) input.checked = !checked;
+                toast(err.message, 'error');
+            } finally {
+                input.disabled = false;
+            }
+        }
+
+        // ---------- 同行卡片判定 ----------
+        // 【改动点】通过几何位置（getBoundingClientRect().top）判断哪些卡片处于同一行，
+        // 兼容响应式布局换列（3→2→1 列）时行数变化，不依赖固定列数计算。
+        // top 值相同的卡片属于同一行（容差 ±5px 消除小数点误差）。
+        function getRowCards(selfCard) {
+            const box = document.getElementById('cards');
+            const selfTop = selfCard.getBoundingClientRect().top;
+            const cards = box.querySelectorAll('.card');
+            return Array.from(cards).filter(c =>
+                Math.abs(c.getBoundingClientRect().top - selfTop) <= 5
+            );
+        }
+
+        // ---------- 创建单个目标卡片 ----------
+        // checks 由调用方传入（局部更新时由 loadTargets 提供）
+        async function createCard(t, checks) {
+            const last = checks[0]; // 接口按时间倒序，第一条为最近
+            const statusClass = !last ? 'status-unknown'
+                : (last.is_up ? 'status-up' : 'status-down');
+            const statusLabel = !last ? '未知' : (last.is_up ? '在线' : '离线');
+            const respTime = last && last.response_time_ms != null
+                ? last.response_time_ms.toFixed(1) + 'ms' : '--';
+
+            const card = document.createElement('div');
+            card.className = 'card' + (t.is_active ? '' : ' disabled');
+            card.dataset.id = t.id;
+
+            // ---------- 卡片头部 ----------
+            const head = document.createElement('div');
+            head.className = 'card-head';
+            head.innerHTML = `
+                <span class="status-dot ${statusClass}"></span>
+                <div class="card-title">
+                    <div class="name">${escapeHtml(t.name)}</div>
+                    <div class="url">${escapeHtml(t.url)}</div>
+                </div>
+                <span class="card-head-status">${statusLabel}</span>`;
+            head.onclick = () => {
+                // 【改动点】同行卡片联动：
+                // 同一行卡片全部收起时点击任意一张 → 整行全部展开；
+                // 同一行卡片全部展开时点击任意一张 → 整行全部收起。
+                // 按钮（开关/立即检测/删除）通过 stopPropagation 不触发展开收起。
+                const rowCards = getRowCards(card);
+                const allCollapsed = rowCards.every(c => !c.classList.contains('open'));
+                rowCards.forEach(c => {
+                    if (allCollapsed) c.classList.add('open');
+                    else c.classList.remove('open');
+                });
+                // 展开的卡片逐个拉取详情渲染（全量历史，保证折线图展示从第一次检测起的全部点）
+                if (allCollapsed) {
+                    rowCards.forEach(c => {
+                        // 【改动点】展开时默认回到第 1 页（需求：每次展开默认第 1 页）
+                        c._page = 1;
+                        // 【改动点】先等一帧再渲染：确保 display:block 已生效，
+                        // 避免 echarts.init 拿到 0 高度容器导致图表空白
+                        requestAnimationFrame(() => refreshDetail(c, { id: Number(c.dataset.id) }, 10000));
+                    });
+                }
+            };
+
+            // ---------- 卡片主体（三个统计项等宽） ----------
+            const body = document.createElement('div');
+            body.className = 'card-body';
+            const uptime = t.uptime_percent != null ? t.uptime_percent.toFixed(1) + '%' : '暂无数据';
+            body.innerHTML = `
+                <div class="stat"><div class="value">${respTime}</div><div class="label">最近响应</div></div>
+                <div class="stat"><div class="value">${uptime}</div><div class="label">可用率</div></div>
+                <div class="stat"><div class="value">${t.interval_seconds}s</div><div class="label">探测间隔</div></div>`;
+
+            // ---------- 卡片底部：开关 + 操作按钮 ----------
+            const footer = document.createElement('div');
+            footer.className = 'card-footer';
+            footer.innerHTML = `
+                <label class="switch" title="启用/禁用监控" data-toggle style="margin-right:8px">
+                    <input type="checkbox" ${t.is_active ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+                <span class="foot-text">${t.is_active ? '监控中' : '已禁用'}</span>
+                <button class="btn btn-success btn-sm" data-check>立即检测</button>
+                <button class="btn btn-danger btn-sm" data-del>删除</button>`;
+
+            // 启用/禁用开关
+            const toggle = footer.querySelector('[data-toggle] input');
+            toggle.onclick = async (e) => {
+                e.stopPropagation();
+                await toggleTarget(card, t, toggle.checked);
+            };
+            // 立即检测按钮
+            footer.querySelector('[data-check]').onclick = async (e) => {
+                e.stopPropagation();
+                await runCheckNow(card, t);
+            };
+            // 删除按钮
+            footer.querySelector('[data-del]').onclick = async (e) => {
+                e.stopPropagation();
+                if (!confirm('确定删除目标「' + t.name + '」？')) return;
+                const btn = e.currentTarget;
+                btn.disabled = true; // 请求期间禁用，防止连点
+                try {
+                    await api('/api/targets/' + t.id, { method: 'DELETE' });
+                    toast('已删除「' + t.name + '」', 'success');
+                    loadTargets();
+                } catch (err) { toast(err.message, 'error'); }
+                finally { btn.disabled = false; }
+            };
+
+            card.appendChild(head);
+            card.appendChild(body);
+            card.appendChild(footer);
+
+            // 展开区域（内容在点击时按需渲染）
+            const detail = document.createElement('div');
+            detail.className = 'card-detail';
+            card.appendChild(detail);
+            return card;
+        }
+
+        // ---------- 立即检测 ----------
+        async function runCheckNow(card, t) {
+            const btn = card.querySelector('[data-check]');
+            btn.disabled = true;
+            btn.textContent = '检测中...';
+            try {
+                const result = await api('/api/targets/' + t.id + '/check-now', { method: 'POST' });
+                toast('检测完成：' + (result.is_up ? '在线' : '离线')
+                    + ' 状态码=' + (result.status_code ?? 'N/A')
+                    + ' 耗时=' + (result.response_time_ms != null ? result.response_time_ms + 'ms' : 'N/A'), 'success');
+                // 更新状态点与卡片信息
+                updateCardStatus(card, result);
+                // 已展开时同步刷新详情，让本次检测点立即出现在折线图
+                if (card.classList.contains('open')) {
+                    refreshDetail(card, t);
+                }
+            } catch (err) {
+                toast('检测失败：' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '立即检测';
+            }
+        }
+
+        function updateCardStatus(card, result) {
+            const dot = card.querySelector('.status-dot');
+            const label = card.querySelector('.card-head-status');
+            dot.className = 'status-dot ' + (result.is_up ? 'status-up' : 'status-down');
+            if (label) label.textContent = result.is_up ? '在线' : '离线';
+            const v = card.querySelector('.card-body .value');
+            v.textContent = result.response_time_ms != null ? result.response_time_ms.toFixed(1) + 'ms' : '--';
+        }
+
+        // ---------- 拉取历史检测记录并渲染详情 ----------
+        // limit 参数：手动展开/立即检测用全量 10000；轮询增量刷新用较小值，减少传输与渲染开销
+        async function refreshDetail(card, t, limit = 10000) {
+            let checks = [];
+            try {
+                // 拉取记录（覆盖从第一次检测起的所有定时/手动检测点）
+                checks = await api('/api/targets/' + t.id + '/checks?limit=' + limit);
+            } catch (e) { checks = []; }
+            renderDetail(card, t, checks);
+        }
+
+        // ---------- 渲染展开详情（监测记录表格 + ECharts 曲线） ----------
+        // checks 为全量历史（接口按时间倒序）；表格每页 8 条分页展示，折线图展示全部点
+        // 【改动点】无论在线/离线/有无数据，都渲染完整「图表容器 + 记录表格」结构，
+        // 保证离线卡片与在线卡片排版完全一致、高度对齐；无数据时占位提示。
+        // 分页状态挂在卡片 DOM 上（card._page / card._checks），各卡片互不干扰。
+        const PAGE_SIZE = 8; // 表格每页最多展示的记录条数
+
+        function renderDetail(card, t, checks) {
+            let detail = card.querySelector('.card-detail');
+            // 首次展开时创建结构（之后只更新内容，复用 ECharts 实例避免闪烁）
+            if (!detail.dataset.ready) {
+                detail.innerHTML = `
+                    <div class="chart-box"></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>时间</th><th>状态码</th><th>响应时间</th><th>错误信息</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                        <div class="pager">
+                            <button type="button" class="pager-btn" data-page="prev">上一页</button>
+                            <span class="pager-info">1 / 1</span>
+                            <button type="button" class="pager-btn" data-page="next">下一页</button>
+                        </div>
+                    </div>`;
+                detail.dataset.ready = '1';
+
+                // 分页按钮事件只绑定一次；闭包内统一通过 card._page / card._checks 读取
+                // 最新数据，翻页时只重渲染表格，不重新请求、不重画图表
+                detail.querySelector('[data-page="prev"]').onclick = (e) => {
+                    e.stopPropagation();
+                    if (card._page > 1) { card._page--; renderTablePage(card); }
+                };
+                detail.querySelector('[data-page="next"]').onclick = (e) => {
+                    e.stopPropagation();
+                    const total = Math.max(1, Math.ceil((card._checks || []).length / PAGE_SIZE));
+                    if (card._page < total) { card._page++; renderTablePage(card); }
+                };
+            }
+
+            // 保存全量检测记录到卡片上，供表格分页切割使用
+            card._checks = checks;
+
+            const chartBox = detail.querySelector('.chart-box');
+            const tableWrap = detail.querySelector('.table-wrap');
+
+            // 折线图数据：全部历史检测点（接口倒序，反转按时间正序）
+            const times = checks.slice().reverse().map(c => fmtTime(c.checked_at));
+            const values = checks.slice().reverse().map(c =>
+                c.response_time_ms != null ? c.response_time_ms : null);
+
+            // 【改动点】无任何检测数据时，图表内部显示居中占位提示，不实例化 ECharts，
+            // 避免空白区域；同时保留 chart-box 容器，保持与有数据卡片同高。
+            if (checks.length === 0) {
+                // 释放已存在的图表实例（若有），避免残留
+                if (card._chart) { card._chart.dispose(); card._chart = null; }
+                chartBox.innerHTML = '<div class="empty-chart">暂无检测数据</div>';
+            } else {
+                // 有数据：确保容器内无历史占位文字
+                if (chartBox.querySelector('.empty-chart')) chartBox.innerHTML = '';
+
+                // 复用已存在的 ECharts 实例，仅 setOption 更新数据，避免重建闪烁
+                let chart = card._chart;
+                if (!chart) {
+                    chart = echarts.init(chartBox);
+                    card._chart = chart; // 实例挂在卡片上，供局部刷新复用（收起不销毁）
+                }
+                // 【改动点】notMerge: true 强制全量替换配置，避免旧 series/x 轴数据残留
+                // 导致图表空白、不重新渲染的问题
+                chart.setOption({
+                    title: { text: '响应时间走势（全部检测）', textStyle: { fontSize: 13, color: '#666' } },
+                    tooltip: { trigger: 'axis' },
+                    grid: { left: 55, right: 20, top: 36, bottom: 28 },
+                    xAxis: { type: 'category', data: times, boundaryGap: false },
+                    yAxis: { type: 'value', name: 'ms' },
+                    series: [{
+                        name: '响应时间',
+                        type: 'line',
+                        data: values,
+                        smooth: true,
+                        areaStyle: { opacity: 0.1 },
+                        lineStyle: { color: '#2c5aa0' },
+                        itemStyle: { color: '#2c5aa0' },
+                        connectNulls: true,
+                        large: true,       // 大量数据点时启用大数据模式
+                        progressive: 500   // 每批渲染 500 个点，保证流畅
+                    }]
+                }, { notMerge: true });
+                // 卡片展开后容器尺寸可能变化，强制 resize 保证图表正确显示；
+                // 再等一帧兜底 resize 一次，确保布局完全稳定（解决“偶尔空白”问题）
+                chart.resize();
+                requestAnimationFrame(() => { if (card._chart) card._chart.resize(); });
+            }
+
+            // 表格：渲染当前页（首次渲染默认第 1 页，由调用方重置 card._page）
+            renderTablePage(card);
+        }
+
+        // ---------- 表格分页渲染 ----------
+        // 【改动点】按 card._page 切割 card._checks，每页最多 8 条；不足 8 条用空行补齐，
+        // 空行保留表格线条。无任何记录时整行提示“暂无检测记录”。
+        function renderTablePage(card) {
+            const checks = card._checks || [];
+            const totalPages = Math.max(1, Math.ceil(checks.length / PAGE_SIZE));
+            // 数据更新后若当前页超出总页数，钳制回最后一页
+            if (card._page > totalPages) card._page = totalPages;
+            if (card._page < 1) card._page = 1;
+
+            const detail = card.querySelector('.card-detail');
+            if (!detail) return;
+            const tbody = detail.querySelector('tbody');
+            if (!tbody) return;
+
+            // 无记录：单行提示
+            if (checks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999">暂无检测记录</td></tr>';
+            } else {
+                // 按页切割（接口倒序，从最新往旧翻页）
+                const start = (card._page - 1) * PAGE_SIZE;
+                const pageItems = checks.slice(start, start + PAGE_SIZE);
+                let html = '';
+                for (let i = 0; i < PAGE_SIZE; i++) {
+                    const c = pageItems[i];
+                    if (c) {
+                        html += `<tr>
+                            <td>${fmtTime(c.checked_at)}</td>
+                            <td>${c.status_code ?? 'N/A'}</td>
+                            <td>${c.response_time_ms != null ? c.response_time_ms + 'ms' : 'N/A'}</td>
+                            <td class="${c.error_message ? 'err-text' : ''}">${escapeHtml(c.error_message || '正常')}</td>
+                        </tr>`;
+                    } else {
+                        // 空行补齐：保留表格线条，内容空白
+                        html += '<tr class="empty-row"><td colspan="4">&nbsp;</td></tr>';
+                    }
+                }
+                tbody.innerHTML = html;
+            }
+
+            // 更新分页控件：页码文字 + 按钮启用/置灰状态
+            const info = detail.querySelector('.pager-info');
+            const prev = detail.querySelector('[data-page="prev"]');
+            const next = detail.querySelector('[data-page="next"]');
+            if (info) info.textContent = card._page + ' / ' + totalPages;
+            if (prev) prev.disabled = card._page <= 1;
+            if (next) next.disabled = card._page >= totalPages;
+        }
+
+        // ---------- 新增目标 ----------
+        document.getElementById('addForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true; // 提交期间禁用按钮，防止重复提交
+            const payload = {
+                name: document.getElementById('f_name').value.trim(),
+                url: document.getElementById('f_url').value.trim(),
+                interval_seconds: parseInt(document.getElementById('f_interval').value),
+                expected_status: parseInt(document.getElementById('f_expected').value),
+                timeout_seconds: parseInt(document.getElementById('f_timeout').value)
+            };
+            try {
+                // POST 返回完整目标对象，直接用其数据实时追加卡片
+                const created = await api('/api/targets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                toast('添加成功！', 'success');
+                e.target.reset();
+                document.getElementById('f_interval').value = 60;
+                document.getElementById('f_expected').value = 200;
+                document.getElementById('f_timeout').value = 10;
+                // 【改动点】不依赖 loadTargets 全量重拉（会被轮询的 isLoading 锁跳过），
+                // 直接把新卡片追加进容器，CSS Grid 自动流式排布到下一空位。
+                await appendCardAfterAdd(created);
+            } catch (err) {
+                toast('添加失败：' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ---------- 新增目标后实时追加卡片 ----------
+        // 【改动点】解决“新增后卡片不出现，需刷新才排版”：
+        // 拿到 POST 返回数据后立即创建卡片并追加到容器，由 Grid 自动流式排列。
+        async function appendCardAfterAdd(t) {
+            const box = document.getElementById('cards');
+            // 容器当前是“暂无目标”空提示时，先清空占位
+            if (box.querySelector('.empty')) box.innerHTML = '';
+            // 若已存在同 id 卡片（并发场景兜底），只更新不重复创建
+            const existing = box.querySelector(`[data-id="${t.id}"]`);
+            if (existing) { updateCardDom(existing, t, []); return; }
+            let checks = [];
+            try { checks = await api('/api/targets/' + t.id + '/checks?limit=1'); } catch (e) { checks = []; }
+            box.appendChild(await createCard(t, checks));
+        }
+
+        // ---------- 时间格式化 ----------
+        // 后端存储/返回 UTC 时间；无时区后缀时手动补 'Z'，new Date 按 UTC 解析，
+        // 再转成本地时间显示，避免时区偏移。
+        function fmtTime(str) {
+            if (str == null) return '';
+            // 若字符串末尾无时区标识（如 'Z'、'+08:00'），视为 UTC 补充后缀
+            const iso = /(Z|[+-]\d{2}:\d{2})$/.test(str) ? str : str + 'Z';
+            return new Date(iso).toLocaleString();
+        }
+
+        // ---------- 辅助转义 ----------
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;',
+                '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        // ---------- 启动 ----------
+        loadTargets();
+        // 定时刷新列表状态（每 15 秒），页面不可见时不轮询
+        setInterval(() => {
+            if (document.visibilityState === 'visible') loadTargets();
+        }, 15000);
+    </script>
+</body>
+</html>
